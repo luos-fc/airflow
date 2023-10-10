@@ -251,13 +251,14 @@ class PodGenerator:
         return PodGeneratorDeprecated(**namespaced).gen_pod()
 
     @staticmethod
-    def reconcile_pods(base_pod: k8s.V1Pod, client_pod: k8s.V1Pod | None) -> k8s.V1Pod:
+    def reconcile_pods(base_pod: k8s.V1Pod, client_pod: k8s.V1Pod | None, reconcile_init_containers: bool=False) -> k8s.V1Pod:
         """
         Merge Kubernetes Pod objects.
 
         :param base_pod: has the base attributes which are overwritten if they exist
             in the client pod and remain if they do not exist in the client_pod
         :param client_pod: the pod that the client wants to create.
+        :param reconcile_init_containers: whether to extend or reconcile init_containers.
         :return: the merged pods
 
         This can't be done recursively as certain fields are overwritten and some are concatenated.
@@ -266,7 +267,7 @@ class PodGenerator:
             return base_pod
 
         client_pod_cp = copy.deepcopy(client_pod)
-        client_pod_cp.spec = PodGenerator.reconcile_specs(base_pod.spec, client_pod_cp.spec)
+        client_pod_cp.spec = PodGenerator.reconcile_specs(base_pod.spec, client_pod_cp.spec, reconcile_init_containers)
         client_pod_cp.metadata = PodGenerator.reconcile_metadata(base_pod.metadata, client_pod_cp.metadata)
         client_pod_cp = merge_objects(base_pod, client_pod_cp)
 
@@ -298,7 +299,7 @@ class PodGenerator:
 
     @staticmethod
     def reconcile_specs(
-        base_spec: k8s.V1PodSpec | None, client_spec: k8s.V1PodSpec | None
+        base_spec: k8s.V1PodSpec | None, client_spec: k8s.V1PodSpec | None, reconcile_init_containers: bool=False
     ) -> k8s.V1PodSpec | None:
         """
         Merge Kubernetes PodSpec objects.
@@ -306,6 +307,7 @@ class PodGenerator:
         :param base_spec: has the base attributes which are overwritten if they exist
             in the client_spec and remain if they do not exist in the client_spec
         :param client_spec: the spec that the client wants to create.
+        :param reconcile_init_containers: whether to extend or reconcile init_containers.
         :return: the merged specs
         """
         if base_spec and not client_spec:
@@ -316,7 +318,13 @@ class PodGenerator:
             client_spec.containers = PodGenerator.reconcile_containers(
                 base_spec.containers, client_spec.containers
             )
-            merged_spec = extend_object_field(base_spec, client_spec, "init_containers")
+            if reconcile_init_containers:
+                client_spec.init_containers = PodGenerator.reconcile_containers(
+                    base_spec.init_containers, client_spec.init_containers
+                )
+                merged_spec = client_spec
+            else:
+                merged_spec = extend_object_field(base_spec, client_spec, "init_containers")
             merged_spec = extend_object_field(base_spec, merged_spec, "volumes")
             return merge_objects(base_spec, merged_spec)
 
